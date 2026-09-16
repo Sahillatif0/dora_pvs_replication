@@ -1,50 +1,64 @@
 """
 Full Procedural Dataset Generator CLI.
-Combines anatomical atlases (or procedural brain templates), seeds PVS and pathology,
-applies domain randomisation, and saves training cases as NIfTI volumes.
+Combines real MNI152 anatomical atlases (via build_atlases.py) or fallback ellipsoid templates,
+seeds PVS and pathology, applies domain randomisation, and saves NIfTI training cases.
+
+Run build_atlases.py FIRST to generate realistic brain canvases:
+    python src/generator/build_atlases.py --num_atlases 10
 """
 
 import os
+import sys
+import glob
 import argparse
 import numpy as np
 import nibabel as nib
+from scipy.ndimage import zoom
 from structures import StructureGenerator
 from mri_physics import MRIPhysicsSimulator
 
-def create_mock_brain_canvas(shape=(128, 128, 128)):
+# Cache for loaded atlases
+_atlas_cache = []
+
+def load_real_atlases(atlas_dir=os.path.join("data", "atlases")):
+    """Load MNI152-derived atlas label maps from disk."""
+    global _atlas_cache
+    if _atlas_cache:
+        return _atlas_cache
+    atlas_files = sorted(glob.glob(os.path.join(atlas_dir, "*.nii.gz")))
+    for f in atlas_files:
+        _atlas_cache.append(nib.load(f).get_fdata().astype(np.uint8))
+    if _atlas_cache:
+        print(f"[Atlas] Loaded {len(_atlas_cache)} real MNI152 brain canvases")
+    return _atlas_cache
+
+def get_brain_canvas(shape=(128, 128, 128), atlas_dir=os.path.join("data", "atlases")):
     """
-    Creates an ellipsoidal synthetic brain template when real SynthSeg atlases
-    are not yet available.
-    Labels:
-        0: Background
-        1: CSF (ventricles + sulci)
-        2: Gray Matter (cortex)
-        3: White Matter (centrum semiovale)
-        4: Basal Ganglia (deep gray/white nuclei)
+    Returns an anatomical label map (real MNI152 atlas or fallback ellipsoid).
+    Labels: 0=BG | 1=CSF | 2=Gray Matter | 3=White Matter | 4=Basal Ganglia
     """
+    atlases = load_real_atlases(atlas_dir)
+    if atlases:
+        canvas = atlases[np.random.randint(len(atlases))].copy()
+        if canvas.shape != tuple(shape):
+            scale = [s / c for s, c in zip(shape, canvas.shape)]
+            canvas = zoom(canvas, scale, order=0).astype(np.uint8)
+        return canvas
+
+    # Fallback: geometric ellipsoid brain phantom
+    print("[Atlas] No real atlases found - using ellipsoid fallback. Run build_atlases.py first!")
     canvas = np.zeros(shape, dtype=np.uint8)
     z, y, x = np.ogrid[:shape[0], :shape[1], :shape[2]]
     cz, cy, cx = shape[0] // 2, shape[1] // 2, shape[2] // 2
-    
-    # Brain outer boundary
     r_sq = ((z - cz)/52)**2 + ((y - cy)/48)**2 + ((x - cx)/40)**2
     brain = r_sq <= 1.0
-    
-    # White matter core
     wm = r_sq <= 0.65
-    
-    # Basal Ganglia inner region
     bg = (((z - cz)/18)**2 + ((y - cy)/20)**2 + ((x - cx)/18)**2) <= 1.0
-    
-    # Ventricles (CSF)
     ventricles = (((z - cz)/24)**2 + ((y - cy)/14)**2 + ((x - cx)/7)**2) <= 1.0
-    
-    # Assign labels
-    canvas[brain] = 2  # Gray matter / cortex
-    canvas[wm] = 3     # White matter
-    canvas[bg] = 4     # Basal ganglia
-    canvas[ventricles] = 1 # CSF
-    
+    canvas[brain] = 2
+    canvas[wm] = 3
+    canvas[bg] = 4
+    canvas[ventricles] = 1
     return canvas
 
 def generate_dataset(num_samples=10, output_dir="data/synthetic", shape=(128, 128, 128)):
@@ -60,7 +74,7 @@ def generate_dataset(num_samples=10, output_dir="data/synthetic", shape=(128, 12
 
     for i in range(num_samples):
         # 1. Base anatomical canvas
-        tissue_canvas = create_mock_brain_canvas(shape=shape)
+        tissue_canvas = get_brain_canvas(shape=shape)
         brain_mask = (tissue_canvas > 0).astype(np.float32)
         wm_mask = (tissue_canvas == 3).astype(np.float32)
         bg_mask = (tissue_canvas == 4).astype(np.float32)
