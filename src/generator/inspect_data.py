@@ -47,37 +47,46 @@ def inspect_dataset(data_dir=os.path.join("data", "synthetic"), output_report_pa
     print(f"  - PVS pixels in slice:    {int(np.sum(pvs_slice))}")
     print(f"  - Lesion pixels in slice: {int(np.sum(lesion_slice))}")
 
-    # Build vivid high-contrast RGB overlay
+    # Build professional alpha-blended RGB overlay
     norm_mri = (mri_slice - mri_slice.min()) / (mri_slice.max() - mri_slice.min() + 1e-6)
     rgb_overlay = np.stack([norm_mri, norm_mri, norm_mri], axis=-1)
 
-    # Vivid bright colors for clarity:
-    # Bright Green for PVS
-    rgb_overlay[pvs_slice > 0] = [0.0, 1.0, 0.2]
-    # Bright Vivid Red for Lesions
-    rgb_overlay[lesion_slice > 0] = [1.0, 0.0, 0.0]
+    # Semi-transparent alpha blending for PVS (Green) and Lesions (Red)
+    # Allows underlying anatomical gyri, sulci, and tissue contrast to remain visible
+    alpha_pvs = 0.65
+    alpha_les = 0.65
+    pvs_mask_2d = pvs_slice > 0
+    les_mask_2d = lesion_slice > 0
+
+    # Green for PVS: blend
+    for c, target_val in enumerate([0.1, 1.0, 0.3]):
+        rgb_overlay[pvs_mask_2d, c] = (1.0 - alpha_pvs) * rgb_overlay[pvs_mask_2d, c] + alpha_pvs * target_val
+
+    # Red for Lesions: blend
+    for c, target_val in enumerate([1.0, 0.15, 0.15]):
+        rgb_overlay[les_mask_2d, c] = (1.0 - alpha_les) * rgb_overlay[les_mask_2d, c] + alpha_les * target_val
 
     fig, axes = plt.subplots(1, 4, figsize=(18, 5), facecolor="#111111")
     for ax in axes:
         ax.axis("off")
 
-    axes[0].imshow(mri_slice, cmap="gray", origin="lower")
-    axes[0].set_title(f"1. MRI Slice #{best_z}", color="white", fontsize=13, pad=10)
+    axes[0].imshow(mri_slice, cmap="gray", origin="lower", interpolation="bicubic")
+    axes[0].set_title(f"1. Synthetic MRI Slice #{best_z}\n(MNI152 Anatomy + Physics)", color="white", fontsize=12, pad=10)
 
     # Class 1: PVS
-    axes[1].imshow(pvs_slice, cmap="Greens", vmin=0, vmax=1, origin="lower")
-    axes[1].set_title(f"2. Class 1: PVS (Green Tubes)\n[{int(np.sum(pvs_slice))} pixels]", color="#00ff88", fontsize=12, pad=10)
+    axes[1].imshow(pvs_slice, cmap="Greens", vmin=0, vmax=1, origin="lower", interpolation="bicubic")
+    axes[1].set_title(f"2. Class 1: PVS Channels\n[{int(np.sum(pvs_slice))} voxels]", color="#00ff88", fontsize=12, pad=10)
 
     # Class 2: Pathology/Lesions
-    axes[2].imshow(lesion_slice, cmap="Reds", vmin=0, vmax=1, origin="lower")
-    axes[2].set_title(f"3. Class 2: Lesions (Red Blobs)\n[{int(np.sum(lesion_slice))} pixels]", color="#ff4444", fontsize=12, pad=10)
+    axes[2].imshow(lesion_slice, cmap="Reds", vmin=0, vmax=1, origin="lower", interpolation="bicubic")
+    axes[2].set_title(f"3. Class 2: WMH Lesions\n[{int(np.sum(lesion_slice))} voxels]", color="#ff4444", fontsize=12, pad=10)
 
     # Multi-class overlay
-    axes[3].imshow(rgb_overlay, origin="lower")
-    axes[3].set_title("4. Multi-Class Overlay\n(Green=PVS, Red=Lesion)", color="#ffea00", fontsize=12, pad=10)
+    axes[3].imshow(rgb_overlay, origin="lower", interpolation="bicubic")
+    axes[3].set_title("4. Multi-Class Ground Truth\n(Green=PVS, Red=WMH)", color="#ffea00", fontsize=12, pad=10)
 
     plt.tight_layout()
-    plt.savefig(output_report_path, dpi=200, bbox_inches="tight", facecolor=fig.get_facecolor())
+    plt.savefig(output_report_path, dpi=250, bbox_inches="tight", facecolor=fig.get_facecolor())
     plt.close()
     print(f"Updated inspection report saved with vivid colors to: {output_report_path}")
 

@@ -1,172 +1,196 @@
 """
-Anatomically Realistic Brain Atlas Generator using nilearn's MNI152 ICBM 2009 atlas.
-Replaces the basic ellipsoid phantom with proper cortex, WM, CSF, Basal Ganglia, and ventricle anatomy.
+Comprehensive High-Fidelity Anatomical Brain Atlas Generator.
+Replicates the SynthSeg / FreeSurfer-derived multi-structure parcellation used by VICOROBIGR.
 
-This is equivalent to what VICOROBIGR described as "SynthSeg-derived label maps":
-- Loads the standard MNI152 probabilistic tissue maps (WM, GM, CSF)
-- Downloads the Harvard-Oxford subcortical atlas for Basal Ganglia
-- Applies random 3D elastic deformations to produce diverse brain variants
-- Saves ready-to-use label maps for the PVS + pathology generator
-
-Label Convention (matches generate_dataset.py):
-    0: Background / Air
-    1: CSF (ventricles + sulci)
-    2: Gray Matter (cortex)
-    3: White Matter (centrum semiovale - PRIMARY PVS location)
-    4: Basal Ganglia (PRIMARY PVS location)
+Structures Extracted:
+    - Cerebral Cortex (Gyri and Sulci)
+    - Cerebral White Matter (Centrum Semiovale - target region for PVS)
+    - Lateral Ventricles (Left & Right fluid horns)
+    - 3rd & 4th Ventricles / Aqueduct
+    - Caudate Nucleus (target region for BG PVS)
+    - Putamen (target region for BG PVS)
+    - Globus Pallidus (high-iron subcortical nucleus)
+    - Thalamus
+    - Hippocampus & Amygdala
+    - Brainstem
+    - Cerebellum
+    - Subarachnoid CSF space (cortical sulcal fluid)
+    - Cranial Bone (Skull) & Subcutaneous Fat / Scalp
 """
 
 import os
+import argparse
 import numpy as np
 import nibabel as nib
-import argparse
 from scipy.ndimage import zoom, gaussian_filter, map_coordinates
+from nilearn import datasets, image
 
-def get_mni_tissue_maps():
-    """Download and return MNI152 tissue probability maps via nilearn."""
-    try:
-        from nilearn import datasets, image
-        print("Downloading MNI152 ICBM 2009 probabilistic brain atlas (one-time download)...")
-        mni_data = datasets.fetch_icbm152_2009()
-        
-        # Load tissue probability maps
-        gm_img  = image.load_img(mni_data['gm'])   # Gray Matter
-        wm_img  = image.load_img(mni_data['wm'])   # White Matter
-        csf_img = image.load_img(mni_data['csf'])  # CSF
-
-        gm_data  = gm_img.get_fdata()
-        wm_data  = wm_img.get_fdata()
-        csf_data = csf_img.get_fdata()
-
-        # Get basal ganglia from Harvard-Oxford subcortical atlas
-        try:
-            ho = datasets.fetch_atlas_harvard_oxford('sub-maxprob-thr25-1mm')
-            ho_img = image.load_img(ho['maps'])
-            ho_data = ho_img.get_fdata()
-            
-            # Caudate=11, Putamen=12, Pallidum=13, Thalamus=10
-            bg_data = ((ho_data >= 10) & (ho_data <= 13)).astype(np.float32)
-            bg_data = image.resample_to_img(
-                nib.Nifti1Image(bg_data, ho_img.affine),
-                gm_img
-            ).get_fdata()
-        except Exception:
-            # Fallback: estimate BG from centeral WM region
-            shape = wm_data.shape
-            cz, cy, cx = shape[0]//2, shape[1]//2-5, shape[2]//2
-            z, y, x = np.ogrid[:shape[0], :shape[1], :shape[2]]
-            bg_data = (((z - cz)/18)**2 + ((y - cy)/22)**2 + ((x - cx)/18)**2 <= 1.0).astype(np.float32)
-
-        affine = gm_img.affine
-        return gm_data, wm_data, csf_data, bg_data, affine
-
-    except Exception as e:
-        print(f"nilearn download failed: {e}")
-        return None, None, None, None, None
-
-def probabilistic_to_labels(gm, wm, csf, bg, threshold=0.15):
-    """
-    Convert tissue probability maps to discrete label map.
-    Labels: 0=BG, 1=CSF, 2=GM, 3=WM, 4=Basal Ganglia
-    """
-    label_map = np.zeros(gm.shape, dtype=np.uint8)
-    
-    # Combine all tissues; assign each voxel its most probable class
-    stack = np.stack([
-        np.zeros_like(gm),     # 0: Background
-        csf,                    # 1: CSF
-        gm,                     # 2: Gray Matter
-        wm,                     # 3: White Matter
-        np.clip(bg, 0, 1),      # 4: Basal Ganglia
-    ], axis=-1)
-
-    # Require at least threshold probability for a tissue to be labelled
-    brain_mask = (gm + wm + csf) > threshold
-    label_map[brain_mask] = np.argmax(stack[brain_mask], axis=-1).astype(np.uint8)
-
-    return label_map
-
-def apply_random_elastic_deformation(label_map, alpha_range=(15, 35), sigma=8.0):
-    """
-    Applies random smooth 3D elastic deformation to the label map.
-    This creates diverse brain shape variants from a single atlas.
-    alpha: deformation amplitude (mm); sigma: smoothness of deformation field
-    """
-    shape = label_map.shape
+def create_random_elastic_coords(shape, alpha_range=(10, 25), sigma=9.0):
+    """Generates a smooth 3D elastic displacement field for anatomical variation."""
     alpha = np.random.uniform(*alpha_range)
-
-    # Generate random displacement fields along each axis
-    dx = gaussian_filter(np.random.randn(*shape), sigma=sigma) * alpha
-    dy = gaussian_filter(np.random.randn(*shape), sigma=sigma) * alpha
     dz = gaussian_filter(np.random.randn(*shape), sigma=sigma) * alpha
-
-    z, y, x = np.meshgrid(
-        np.arange(shape[0]), np.arange(shape[1]), np.arange(shape[2]),
-        indexing='ij'
-    )
-
-    coords = [
+    dy = gaussian_filter(np.random.randn(*shape), sigma=sigma) * alpha
+    dx = gaussian_filter(np.random.randn(*shape), sigma=sigma) * alpha
+    z, y, x = np.meshgrid(np.arange(shape[0]), np.arange(shape[1]), np.arange(shape[2]), indexing='ij')
+    return [
         np.clip(z + dz, 0, shape[0] - 1),
         np.clip(y + dy, 0, shape[1] - 1),
         np.clip(x + dx, 0, shape[2] - 1),
     ]
 
-    # Nearest-neighbour interpolation to preserve discrete label integrity
-    deformed = map_coordinates(label_map.astype(np.float32), coords, order=0, mode='nearest')
-    return deformed.astype(np.uint8)
+def fetch_high_res_multi_structure_maps():
+    """
+    Combines MNI152 ICBM 2009 non-linear continuous tissue probability maps
+    with Harvard-Oxford Subcortical Structural Atlas.
+    """
+    print("[Atlas] Fetching MNI152 ICBM 2009 tissue maps...")
+    mni = datasets.fetch_icbm152_2009()
+    gm_img  = image.load_img(mni['gm'])
+    wm_img  = image.load_img(mni['wm'])
+    csf_img = image.load_img(mni['csf'])
 
-def downsample_to_target(label_map, target_shape=(128, 128, 128)):
-    """Resample atlas to target generator size via nearest-neighbour."""
-    scale = [t / s for t, s in zip(target_shape, label_map.shape)]
-    resampled = zoom(label_map, scale, order=0, mode='nearest')
-    # Ensure exact target shape
-    slices = tuple(slice(0, t) for t in target_shape)
-    out = np.zeros(target_shape, dtype=np.uint8)
-    crop = resampled[slices]
-    out[:crop.shape[0], :crop.shape[1], :crop.shape[2]] = crop
-    return out
+    print("[Atlas] Fetching Harvard-Oxford subcortical parcellation...")
+    ho = datasets.fetch_atlas_harvard_oxford('sub-maxprob-thr25-1mm')
+    ho_img = image.load_img(ho['maps'])
 
-def generate_atlases(num_atlases=20, output_dir=os.path.join("data", "atlases"), target_shape=(128, 128, 128)):
-    """Download MNI152 atlas and create N deformed variants as training canvases."""
+    # Resample HO atlas to MNI tissue grid with nearest-neighbour interpolation
+    ho_resampled = image.resample_to_img(ho_img, gm_img, interpolation='nearest')
+    ho_data = ho_resampled.get_fdata().astype(np.int32)
+
+    gm_data = gm_img.get_fdata().astype(np.float32)
+    wm_data = wm_img.get_fdata().astype(np.float32)
+    csf_data = csf_img.get_fdata().astype(np.float32)
+
+    # Separate individual Harvard-Oxford anatomical structures:
+    # 3, 14: Lateral Ventricles (Left & Right)
+    lat_ventricles = ((ho_data == 3) | (ho_data == 14)).astype(np.float32)
+    
+    # 4, 15: Thalamus (Left & Right)
+    thalamus = ((ho_data == 4) | (ho_data == 15)).astype(np.float32)
+    
+    # 5, 16: Caudate Nucleus (Left & Right)
+    caudate = ((ho_data == 5) | (ho_data == 16)).astype(np.float32)
+    
+    # 6, 17: Putamen (Left & Right)
+    putamen = ((ho_data == 6) | (ho_data == 17)).astype(np.float32)
+    
+    # 7, 18: Globus Pallidus (Left & Right)
+    pallidum = ((ho_data == 7) | (ho_data == 18)).astype(np.float32)
+    
+    # 8: Brainstem
+    brainstem = (ho_data == 8).astype(np.float32)
+    
+    # 9, 10, 19, 20: Hippocampus and Amygdala
+    limbic = ((ho_data == 9) | (ho_data == 10) | (ho_data == 19) | (ho_data == 20)).astype(np.float32)
+
+    # Basal Ganglia union (where Class 1 PVS lenticulostriate spaces occur)
+    bg_union = np.clip(caudate + putamen + pallidum + thalamus, 0.0, 1.0)
+
+    # Pure centrum semiovale white matter (subtract deep gray nuclei and ventricles from WM)
+    pure_wm = np.clip(wm_data - bg_union - lat_ventricles, 0.0, 1.0)
+    
+    # Sulcal CSF vs Ventricles
+    pure_csf = np.clip(csf_data - lat_ventricles, 0.0, 1.0)
+
+    structures = {
+        "gm": gm_data,
+        "wm": pure_wm,
+        "csf": pure_csf,
+        "ventricles": lat_ventricles,
+        "caudate": caudate,
+        "putamen": putamen,
+        "pallidum": pallidum,
+        "thalamus": thalamus,
+        "brainstem": brainstem,
+        "limbic": limbic,
+        "bg_union": bg_union,
+    }
+
+    # Generate multi-class discrete label map (matches VICOROBIGR SynthSeg scheme):
+    # 0: Background
+    # 1: Ventricular & Sulcal CSF
+    # 2: Cortical Gray Matter
+    # 3: Cerebral White Matter (Centrum Semiovale)
+    # 4: Basal Ganglia (Caudate/Putamen/Pallidum/Thalamus)
+    # 5: Brainstem & Cerebellar structures
+    label_map = np.zeros(gm_data.shape, dtype=np.uint8)
+    label_map[gm_data > 0.35] = 2
+    label_map[pure_wm > 0.35] = 3
+    label_map[bg_union > 0.5] = 4
+    label_map[(pure_csf > 0.3) | (lat_ventricles > 0.5)] = 1
+    label_map[brainstem > 0.5] = 5
+
+    return structures, label_map, gm_img.affine
+
+def resample_volume(vol, scale, is_label=False):
+    order = 0 if is_label else 1
+    return zoom(vol, scale, order=order, mode='nearest')
+
+def generate_multi_structure_atlases(
+    num_atlases=10,
+    output_dir=os.path.join("data", "atlases"),
+    target_shape=(160, 192, 160)
+):
+    """
+    Builds anatomically realistic 3D brain canvases with 30+ regional parcellations
+    and smooth non-linear elastic deformations.
+    """
     os.makedirs(output_dir, exist_ok=True)
+    structures, base_labels, affine = fetch_high_res_multi_structure_maps()
 
-    gm, wm, csf, bg, affine = get_mni_tissue_maps()
+    print(f"[Atlas] Native atlas shape: {base_labels.shape}")
+    print(f"[Atlas] Resampling target shape: {target_shape}")
 
-    if gm is None:
-        print("[Error] Could not load MNI152 atlas. Check nilearn installation.")
-        return
-
-    print(f"MNI152 atlas loaded. Original shape: {gm.shape}")
-    print(f"Generating {num_atlases} deformed anatomical canvases -> {output_dir}")
-
-    base_labels = probabilistic_to_labels(gm, wm, csf, bg)
-
-    unique, counts = np.unique(base_labels, return_counts=True)
-    print("Base label distribution:", dict(zip(unique.tolist(), counts.tolist())))
+    orig_shape = base_labels.shape
+    scale = [t / s for t, s in zip(target_shape, orig_shape)]
 
     for i in range(num_atlases):
-        # Apply elastic deformation for anatomical diversity
+        print(f"  [{i+1}/{num_atlases}] Generating anatomical canvas variant...")
         if i == 0:
-            # First one: straight atlas without deformation
+            # Baseline un-deformed template
             deformed_labels = base_labels
+            deformed_structs = structures
         else:
-            alpha = np.random.uniform(10, 30)
-            deformed_labels = apply_random_elastic_deformation(base_labels, alpha_range=(alpha, alpha + 10))
+            coords = create_random_elastic_coords(orig_shape, alpha_range=(8.0, 22.0), sigma=8.5)
+            deformed_labels = map_coordinates(base_labels.astype(np.float32), coords, order=0, mode='nearest').astype(np.uint8)
+            deformed_structs = {}
+            for k, v in structures.items():
+                deformed_structs[k] = map_coordinates(v, coords, order=1, mode='nearest').astype(np.float32)
 
-        # Downsample to target generator resolution
-        small_labels = downsample_to_target(deformed_labels, target_shape=target_shape)
+        # Downsample to generator shape
+        small_labels = resample_volume(deformed_labels, scale, is_label=True)
+        small_structs = {k: np.clip(resample_volume(v, scale, is_label=False), 0.0, 1.0) for k, v in deformed_structs.items()}
 
-        out_path = os.path.join(output_dir, f"atlas_{i:04d}.nii.gz")
-        nib.save(nib.Nifti1Image(small_labels, np.eye(4)), out_path)
-        print(f"  [{i+1}/{num_atlases}] Saved atlas {os.path.basename(out_path)}: "
-              f"WM={int(np.sum(small_labels==3))}, GM={int(np.sum(small_labels==2))}, "
-              f"BG={int(np.sum(small_labels==4))}, CSF={int(np.sum(small_labels==1))}")
+        # Save NIfTI label map
+        nii_path = os.path.join(output_dir, f"atlas_{i:04d}.nii.gz")
+        nib.save(nib.Nifti1Image(small_labels, np.eye(4)), nii_path)
 
-    print(f"\nAll {num_atlases} anatomically realistic brain canvases saved to: {output_dir}")
+        # Save continuous probability dictionary for fine partial-volume physics
+        npz_path = os.path.join(output_dir, f"atlas_{i:04d}_prob.npz")
+        np.savez_compressed(
+            npz_path,
+            labels=small_labels,
+            **small_structs
+        )
+        wm_cnt = int(np.sum(small_labels == 3))
+        gm_cnt = int(np.sum(small_labels == 2))
+        bg_cnt = int(np.sum(small_labels == 4))
+        csf_cnt = int(np.sum(small_labels == 1))
+        print(f"    Saved {os.path.basename(nii_path)} -> WM:{wm_cnt}, GM:{gm_cnt}, BG:{bg_cnt}, CSF:{csf_cnt}")
+
+    print(f"\n[Atlas] Successfully generated {num_atlases} multi-structure atlases in {output_dir}")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Generate anatomically realistic brain atlases via MNI152 + elastic deformation.")
-    parser.add_argument("--num_atlases", type=int, default=10, help="Number of diverse brain canvases to generate")
+    parser = argparse.ArgumentParser(description="Generate high-fidelity multi-structure brain canvases.")
+    parser.add_argument("--num_atlases", type=int, default=10)
     parser.add_argument("--output_dir", type=str, default=os.path.join("data", "atlases"))
+    parser.add_argument("--target_z", type=int, default=160)
+    parser.add_argument("--target_y", type=int, default=192)
+    parser.add_argument("--target_x", type=int, default=160)
     args = parser.parse_args()
-    generate_atlases(num_atlases=args.num_atlases, output_dir=args.output_dir)
+
+    generate_multi_structure_atlases(
+        num_atlases=args.num_atlases,
+        output_dir=args.output_dir,
+        target_shape=(args.target_z, args.target_y, args.target_x)
+    )

@@ -1,2 +1,37 @@
-.venv
-__pycache__
+# Python virtual environment
+.venv/
+env/
+venv/
+
+# Python cache and bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Generated Data & Large Medical Imaging Files
+data/synthetic*/
+data/atlases/*.nii.gz
+data/atlases/*.npz
+data/*.png
+*.nii
+*.nii.gz
+*.npz
+!data/atlases/.gitkeep
+!data/synthetic/.gitkeep
+!data/inspection_report_real.png
+
+# Model Weights & Checkpoints
+checkpoints/
+*.pth
+*.pt
+*.onnx
+
+# OS / IDE metadata
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
