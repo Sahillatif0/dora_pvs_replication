@@ -24,6 +24,6 @@ COPY docker/inference.py .
 
 # Standard challenge I/O directories
 # Input images are mounted into /input, output predictions written to /output
-RUN mkdir -p /input /output
+RUN mkdir -p /input /output /workspace/checkpoints
 
 ENTRYPOINT ["python", "inference.py"]
