@@ -1,0 +1,42 @@
+# Configuration for Synthetic Data Generation & Domain Randomisation (VICOROBIGR / DRIPS style)
+
+# Target Labels:
+# 0: Background / Normal Brain Tissue
+# 1: Perivascular Space (PVS)
+# 2: Pathology / White Matter Lesions (WMH)
+
+generator:
+  # Anatomical Atlas parameters
+  patch_size: [128, 128, 128]
+  voxel_size: [1.0, 1.0, 1.0]
+
+  # PVS simulation settings (curved thin tubes)
+  pvs:
+    num_structures_range: [150, 450]     # Total count of PVS channels seeded per volume
+    length_range_mm: [3.0, 15.0]         # Length of PVS channels
+    radius_range_mm: [0.4, 1.2]          # Radius (small tubular structures)
+    curvature_std: 0.15                  # Curvature perturbation along curve trajectory
+    profile_type: "cosine"               # Smooth cosine-weighted cross-section
+
+  # Pathology / Confounder simulation settings (irregular ellipsoidal blobs)
+  pathology:
+    num_lesions_range: [5, 25]           # Number of WMH-like lesions
+    radius_range_mm: [2.0, 7.0]          # Radius range for lesions (much thicker than PVS)
+    irregularity: 0.35                   # Deforms ellipsoid to mimic realistic WMH
+
+  # Domain Randomisation & MRI physics
+  randomisation:
+    # Contrast modes: "T1w_like" (PVS hypointense, WM bright), "T2w_like" (PVS hyperintense, CSF bright), "random_contrast"
+    contrast_probabilities:
+      t1w: 0.45
+      t2w: 0.45
+      random: 0.10
+    
+    # Noise and artifacts
+    rician_noise_std_range: [0.01, 0.08]
+    gaussian_blur_sigma_range: [0.2, 1.2]
+    bias_field_order: 3
+    bias_field_coeff_std: 0.2
+    
+    # Anisotropic slice thickness simulation (downsample + upsample)
+    slice_thickness_range_mm: [0.5, 2.5]
