@@ -10,16 +10,22 @@ This repository is a reproduction of the 1st-place winning methodology (**Team V
 
 ---
 
-## 🚀 Key Highlights & Verified Performance
+## 🚀 Official Challenge Results & Verification (DoRA-PVS Paper)
 
-Our implementation strictly respects the challenge's **Zero-Real-Data Training Rule** (training 100% on procedural physics simulations) and delivers benchmark results:
+In the official challenge paper (*Assessing Generalisation of Perivascular Space Segmentation Across Heterogeneous MRI Cohorts: The DoRA-PVS Challenge 2026*, Springer LNCS 16877), methods were evaluated across **285 real patient MRI scans from 12 heterogeneous cohorts** (1.5T, 3T, and 7T).
 
-| Metric | Challenge Baseline | Our Replicated Model | Medical Significance |
-| :--- | :---: | :---: | :--- |
-| **Median AUPRC** (Primary Metric) | $\sim 0.8500$ | **$0.8754$** | Top challenge tier; handles severe class imbalance ($<0.1\%$ PVS voxels) |
-| **Median clDice** (Tubular Topology)| $\sim 0.6500$ | **$0.6981$** | Preserves continuous vessel connectivity along perforating arteries |
-| **Median Dice (DSC)** | $0.30 - 0.50$ (human) | **$0.6133$** | Exceeds inter-rater human variability for 1-voxel microvessels |
-| **Optimal Threshold** | N/A | **$0.45$** | Sharp, highly confident softmax lesion predictions ($P \approx 1.0$) |
+### Official Leaderboard: Domain-Randomisation Track (Section 3.2, Table 2)
+
+| Rank | Team / Method | Bootstrap Rank (1st %) | Median AUPRC | Median clDice | Median Lesion-wise DSC |
+| :---: | :--- | :---: | :---: | :---: | :---: |
+| 🥇 **1st** | **VICOROBIGR (Winner - Replicated)** | **1.00 (100.0%)** | **0.26** | **0.15** | **0.09** |
+| 🥈 **2nd** | **DoRA-complex (Organizer Baseline)** | 2.00 (0.0%) | 0.15 | 0.06 | 0.03 |
+| 🥉 **3rd** | **Seabass** | 3.00 (0.0%) | 0.08 | 0.03 | 0.01 |
+| 4th | **DoRA-baseline (Organizer Baseline)** | 4.00 (0.0%) | 0.09 | 0.02 | 0.01 |
+
+> **Key Takeaway from Paper:**
+> - **VICOROBIGR won 1st place in 100% of bootstrap resamples.**
+> - While open-track models trained on real patient data suffered massive drops when encountering new scanner vendors, VICOROBIGR's domain-randomised synthetic DynUNet beat random-classifier performance in **11 out of 12 real clinical cohorts**!
 
 ---
 

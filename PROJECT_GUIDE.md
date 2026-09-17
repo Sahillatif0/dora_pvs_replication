@@ -124,18 +124,31 @@ sequenceDiagram
 
 ---
 
-## 5. Quantitative & Qualitative Results
+## 5. Quantitative Results & Comparison with Paper (Table 2 & Section 3.2)
 
-### 5.1 Challenge Benchmark Metrics
-Evaluated on unseen test volumes with multi-contrast domain randomisation:
+In the official challenge paper (*Assessing Generalisation of Perivascular Space Segmentation Across Heterogeneous MRI Cohorts: The DoRA-PVS Challenge 2026*, Springer LNCS 16877), methods were evaluated across **285 real patient MRI scans from 12 heterogeneous cohorts** spanning 1.5T, 3T, and 7T scanners.
 
-| Metric | Measured Value | Benchmark Threshold | Evaluation |
-| :--- | :---: | :---: | :--- |
-| **Median AUPRC** | **$0.8754$** | $> 0.8500$ | **Exceeds winning benchmark tier** |
-| **Median clDice** | **$0.6981$** | $> 0.6500$ | High topological connectivity along vessels |
-| **Median Dice (DSC)** | **$0.6133$** | $0.30 - 0.50$ (human rater) | Significantly surpasses human agreement |
-| **Lesion-wise DSC** | **$0.5402$** | $> 0.5000$ | Robust individual lesion cluster detection |
-| **Decision Threshold** | **$0.45$** | Stable ($0.40 - 0.50$) | Highly confident softmax predictions |
+### 5.1 Official Challenge Leaderboard: Domain-Randomisation Track (Table 2 & Section 3.2)
+
+| Rank | Team / Method | Bootstrap Rank (1st %) | Median AUPRC | Median clDice | Median Lesion-wise DSC |
+| :---: | :--- | :---: | :---: | :---: | :---: |
+| 🥇 **1st** | **VICOROBIGR (Winner)** | **1.00 (100.0%)** | **0.26** | **0.15** | **0.09** |
+| 🥈 **2nd** | **DoRA-complex (Organizer Baseline)** | 2.00 (0.0%) | 0.15 | 0.06 | 0.03 |
+| 🥉 **3rd** | **Seabass** | 3.00 (0.0%) | 0.08 | 0.03 | 0.01 |
+| 4th | **DoRA-baseline (Organizer Baseline)** | 4.00 (0.0%) | 0.09 | 0.02 | 0.01 |
+
+> **Key Takeaway from Paper:** 
+> - **VICOROBIGR won 1st place in 100% of bootstrap resamples.**
+> - On completely unseen real clinical cohorts, PVS segmentation is an extremely difficult task because PVS occupies $<0.1\%$ of brain volume and human raters only achieve $0.64$ DSC.
+> - VICOROBIGR's median AUPRC of **0.26** outperformed all other synthetic methods and beat random-classifier performance across 11 out of 12 real clinical cohorts!
+
+### 5.2 Regional Differences Reported in the Paper (Section 3.3)
+- **Basal Ganglia (BG ROI):** Median AUPRC = **0.217** [IQR: 0.135–0.301]
+- **Centrum Semiovale (CSO ROI):** Median AUPRC = **0.141** [IQR: 0.078–0.243]
+- **clDice:** Nearly identical across both regions (~0.120)
+- **Lesion-wise DSC:** BG: 0.103 vs. CSO: 0.078
+
+---
 
 ### 5.2 Real Human Brain Scan Inference (Zero-Shot)
 Tested on the raw **ICBM 2009c Human T1w MRI**:
