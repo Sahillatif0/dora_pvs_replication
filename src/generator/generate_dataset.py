@@ -74,9 +74,10 @@ def get_authentic_anatomical_template():
     return _template_cache
 
 def generate_dataset(
-    num_samples=10,
+    num_samples=5,
     output_dir="data/synthetic",
     target_shape=None,
+    prefix="SYNTH"
 ):
     images_dir = os.path.join(output_dir, "imagesTr")
     labels_dir = os.path.join(output_dir, "labelsTr")
@@ -169,7 +170,7 @@ def generate_dataset(
         target_label[pathology_mask > 0] = 2
 
         # 7. Save as standard NIfTI (.nii.gz)
-        case_id = f"SYNTH_{i:04d}"
+        case_id = f"{prefix}_{i:04d}"
         img_path = os.path.join(images_dir, f"{case_id}_0000.nii.gz")
         lbl_path = os.path.join(labels_dir, f"{case_id}.nii.gz")
 
@@ -184,12 +185,14 @@ def generate_dataset(
     print(f"\nDataset generation complete! Files saved in: {output_dir}")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Generate authentic synthetic DoRA-PVS training data.")
+    parser = argparse.ArgumentParser(description="Generate authentic synthetic DoRA-PVS training/test data.")
     parser.add_argument("--num_samples", type=int, default=5, help="Number of synthetic cases to generate")
     parser.add_argument("--output_dir", type=str, default="data/synthetic", help="Output directory")
+    parser.add_argument("--prefix", type=str, default="SYNTH", help="Filename prefix (e.g. TEST or SYNTH)")
     args = parser.parse_args()
 
     generate_dataset(
         num_samples=args.num_samples,
         output_dir=args.output_dir,
+        prefix=args.prefix,
     )
